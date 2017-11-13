@@ -18,6 +18,10 @@ object Cart {
   case object CartEmpty
   case object ItemAdded
   case object ItemRemoved
+  case object CheckState
+  case object Empty
+  case object NotEmpty
+  case object InCheckout
 }
 
 //states

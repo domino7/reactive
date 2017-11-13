@@ -11,10 +11,11 @@ import scala.concurrent.duration._
 
 class CartManager(id: String) extends PersistentActor with Timers with ActorLogging {
   val system = ActorSystem("cartSys")
-  override def persistenceId: String = "CartManager0001"
+  override def persistenceId: String = id
 
   var state = Cart()
   def updateCartItems(event: ItemsBalanceChangeEvent): Unit = {
+    timers.startSingleTimer(Cart.TickKey, Cart.TimeOutMsg, 2.seconds)
     state = state.update(event)
   }
   def updateState(event: CartStateChangeEvent): Unit =
@@ -26,7 +27,7 @@ class CartManager(id: String) extends PersistentActor with Timers with ActorLogg
       }
     )
 
-  val checkout1: ActorRef = system.actorOf(Props[Checkout], "checkout1")
+  val checkout1: ActorRef = context.actorOf(Props[Checkout], "checkout1")
 
   def empty(): Receive = LoggingReceive{
     case Cart.AddItem =>{
@@ -36,10 +37,10 @@ class CartManager(id: String) extends PersistentActor with Timers with ActorLogg
       }
       persist(CartStateChangeEvent(NotEmpty)){
         event =>
-          timers.startSingleTimer(Cart.TickKey, Cart.TimeOutMsg, 2.seconds)
           updateState(event)
       }
     }
+    case Cart.CheckState => sender ! Cart.Empty
   }
 
   def nonEmpty(): Receive = LoggingReceive{
@@ -60,7 +61,7 @@ class CartManager(id: String) extends PersistentActor with Timers with ActorLogg
     }
     case Cart.RemoveItem if state.itemsNum > 1 => {
       persist(ItemsBalanceChangeEvent(-1)) {
-        sender ! Cart.ItemAdded
+        sender ! Cart.ItemRemoved
         event => updateCartItems(event)
       }
     }
@@ -80,6 +81,7 @@ class CartManager(id: String) extends PersistentActor with Timers with ActorLogg
         event => updateState(event)
       }
     }
+    case Cart.CheckState => sender ! Cart.NotEmpty
   }
 
   def inCheckout(): Receive = LoggingReceive{
@@ -98,17 +100,19 @@ class CartManager(id: String) extends PersistentActor with Timers with ActorLogg
       }
       persist(CartStateChangeEvent(Empty)){
         sender ! Cart.CartEmpty
+        println("CHECKOUT CLOSED -> CART EMPTY")
         event => updateState(event)
       }
     }
+
+    case Cart.CheckState => sender ! Cart.NotEmpty
   }
-  //  def startTimer(): Unit = {}
-  //  def printItems(): Unit = { println("items:" + state.itemsNum)}
+
 
   override def receiveRecover: Receive = {
     case evt: ItemsBalanceChangeEvent => updateCartItems(evt)
     case evt: CartStateChangeEvent => updateState(evt)
-    case SnapshotOffer(_, snapshot: Cart) => state = snapshot
+//    case SnapshotOffer(_, snapshot: Cart) => state = snapshot
     case RecoveryCompleted => log.info("Recovery completed!")
   }
 

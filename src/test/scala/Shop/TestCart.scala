@@ -39,9 +39,9 @@ class TestCart extends TestKit(ActorSystem("TestCart"))
     }
 
 
-    "CartManager" must {
+  "CartManager" must {
 
-      "Process transaction successfully with no interrupts" in {
+    "Process transaction successfully with no interrupts" in {
       val cartManagerId = "test-id-0009991"
       val cartManager = system.actorOf(Props(new CartManager(cartManagerId)), "cart-test-01")
       cartManager ! Cart.AddItem
@@ -50,6 +50,21 @@ class TestCart extends TestKit(ActorSystem("TestCart"))
       expectMsgType[Cart.CheckoutStarted]
       cartManager ! Cart.CheckoutClosed
       expectMsg(Cart.CartEmpty)
+    }
+
+    "Handle timeouts" in {
+      val cartManagerId = "test-id-0009991"
+      val cartManager = system.actorOf(Props(new CartManager(cartManagerId)), "cart-test-05")
+      cartManager ! Cart.AddItem
+      expectMsg(Cart.ItemAdded)
+
+      cartManager ! Cart.CheckState
+      expectMsg(Cart.NotEmpty)
+
+      Thread.sleep(3*1000)
+
+      cartManager ! Cart.CheckState
+      expectMsg(Cart.Empty)
     }
 
     "Transaction is not continued after kill" in {
@@ -69,6 +84,12 @@ class TestCart extends TestKit(ActorSystem("TestCart"))
       val cartManager1 = system.actorOf(Props(new CartManager(cartManagerId)), "cart-test-03")
       cartManager1 ! Cart.AddItem
       expectMsg(Cart.ItemAdded)
+      cartManager1 ! Cart.AddItem
+      expectMsg(Cart.ItemAdded)
+      cartManager1 ! Cart.RemoveItem
+      expectMsg(Cart.ItemRemoved)
+      cartManager1 ! Cart.AddItem
+      expectMsg(Cart.ItemAdded)
       cartManager1 ! Cart.StartCheckout
       expectMsgType[Cart.CheckoutStarted]
 
@@ -77,6 +98,25 @@ class TestCart extends TestKit(ActorSystem("TestCart"))
 
       cartManager2 ! Cart.CheckoutClosed
       expectMsg(Cart.CartEmpty)
+    }
+
+    "Handle timeouts after restart" in {
+      val cartManagerId = "test-id-0009992"
+      val cartManager1 = system.actorOf(Props(new CartManager(cartManagerId)), "cart-test-06")
+      cartManager1 ! Cart.AddItem
+      expectMsg(Cart.ItemAdded)
+
+      cartManager1 ! Cart.CheckState
+      expectMsg(Cart.NotEmpty)
+
+      cartManager1 ! PoisonPill
+      val cartManager2 = system.actorOf(Props(new CartManager(cartManagerId)), "cart-test-07")
+      cartManager2 ! Cart.CheckState
+      expectMsg(Cart.NotEmpty)
+      Thread.sleep(3*1000)
+
+      cartManager2 ! Cart.CheckState
+      expectMsg(Cart.Empty)
     }
   }
 

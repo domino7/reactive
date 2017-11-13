@@ -74,10 +74,11 @@ class Checkout extends Actor with Timers {
       context become cancelled()
     case Checkout.PaymentTimerExpired =>
       context become cancelled()
-    case Checkout.PaymentReceived =>
+    case Checkout.PaymentReceived => {
       customerRef ! Cart.CheckoutClosed
       context.parent ! Cart.CheckoutClosed
       context become closed()
+    }
     case Checkout.PaymentTimeOutMsg =>{
       println("payment timeout")
       context become cancelled()
