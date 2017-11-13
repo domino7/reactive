@@ -1,60 +1,81 @@
 package Shop
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.testkit.{ImplicitSender, TestActorRef, TestKit, TestProbe}
-import org.scalatest.{BeforeAndAfterAll, WordSpec, WordSpecLike}
-
+import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec, WordSpecLike}
+import scala.concurrent.duration._
 /**
   * Created by Dominik on 30.10.2017.
   */
 
+
+/*
+  NOTE: TESTS SHOULD BE RUN IN MEMORY
+  set inmemory journal, snapshot in application.conf
+ */
+
 class TestCart extends TestKit(ActorSystem("TestCart"))
-  with WordSpecLike with BeforeAndAfterAll with ImplicitSender {
+  with WordSpecLike with BeforeAndAfterAll with ImplicitSender with Matchers{
   override def afterAll(): Unit = system.terminate
 
-  "[Sync] A Cart " must {
-    "Be empty on init " in {
-      val testCart = TestActorRef[Cart]
-      testCart ! Cart.Init
-      assert(testCart.underlyingActor.itemsNum == 0)
+    "A Cart" must {
+      "Be empty on init " in {
+        val testCart = Cart()
+        assert(testCart.itemsNum == 0)
+      }
+      "Add / remove products " in {
+        var testCart = Cart()
+        val eventAdd = ItemsBalanceChangeEvent(1)
+        val eventRemove = ItemsBalanceChangeEvent(-1)
+        testCart = testCart.update(eventAdd)
+        assert(testCart.itemsNum == 1)
+        testCart = testCart.update(eventAdd)
+        assert(testCart.itemsNum == 2)
+        testCart = testCart.update(eventRemove)
+        assert(testCart.itemsNum == 1)
+        testCart = testCart.update(eventRemove)
+        assert(testCart.itemsNum == 0)
+      }
     }
-    "Add / remove products " in {
-      val testCart = TestActorRef[Cart]
-      testCart ! Cart.Init
-      testCart ! Cart.AddItem
-      assert(testCart.underlyingActor.itemsNum == 1)
-      testCart ! Cart.AddItem
-      assert(testCart.underlyingActor.itemsNum == 2)
-      testCart ! Cart.AddItem
-      assert(testCart.underlyingActor.itemsNum == 3)
-      testCart ! Cart.ItemRemoved
-      assert(testCart.underlyingActor.itemsNum == 2)
-      testCart ! Cart.ItemRemoved
-      assert(testCart.underlyingActor.itemsNum == 1)
-      testCart ! Cart.ItemRemoved
-      assert(testCart.underlyingActor.itemsNum == 0)
-      testCart ! Cart.AddItem
-      assert(testCart.underlyingActor.itemsNum == 1)
-    }
-    "Become empty when timeout triggered in nonEmpty state" in {
-      val testCart = TestActorRef[Cart]
-      testCart ! Cart.Init
-      testCart ! Cart.AddItem
-      testCart ! Cart.AddItem
-      testCart ! Cart.AddItem
-      Thread.sleep(3*1000)
-      assert(testCart.underlyingActor.itemsNum == 0)
-    }
-  }
 
-  "[Async] A Cart " must {
-    "Process transaction successfully" in {
-      val testCart = TestActorRef[Cart]
-      testCart ! Cart.Init
-      testCart ! Cart.AddItem
-      testCart ! Cart.StartCheckout
+
+    "CartManager" must {
+
+      "Process transaction successfully with no interrupts" in {
+      val cartManagerId = "test-id-0009991"
+      val cartManager = system.actorOf(Props(new CartManager(cartManagerId)), "cart-test-01")
+      cartManager ! Cart.AddItem
+      expectMsg(Cart.ItemAdded)
+      cartManager ! Cart.StartCheckout
       expectMsgType[Cart.CheckoutStarted]
-      testCart ! Cart.CheckoutClosed
+      cartManager ! Cart.CheckoutClosed
+      expectMsg(Cart.CartEmpty)
+    }
+
+    "Transaction is not continued after kill" in {
+      val cartManagerId = "test-id-0009992"
+      val cartManager = system.actorOf(Props(new CartManager(cartManagerId)), "cart-test-02")
+      cartManager ! Cart.AddItem
+      expectMsg(Cart.ItemAdded)
+
+      cartManager ! PoisonPill
+
+      cartManager ! Cart.AddItem
+      expectNoMessage(1.seconds)
+    }
+
+    "Continue transaction after restart" in {
+      val cartManagerId = "test-id-0009993"
+      val cartManager1 = system.actorOf(Props(new CartManager(cartManagerId)), "cart-test-03")
+      cartManager1 ! Cart.AddItem
+      expectMsg(Cart.ItemAdded)
+      cartManager1 ! Cart.StartCheckout
+      expectMsgType[Cart.CheckoutStarted]
+
+      cartManager1 ! PoisonPill
+      val cartManager2 = system.actorOf(Props(new CartManager(cartManagerId)), "cart-test-04")
+
+      cartManager2 ! Cart.CheckoutClosed
       expectMsg(Cart.CartEmpty)
     }
   }

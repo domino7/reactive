@@ -12,11 +12,10 @@ object Customer{
 }
 
 class Customer extends Actor{
-  val cart1 = context.actorOf(Props[Cart], "cart1")
+  val cart1 = context.actorOf(Props(new CartManager("CartManager0001-run")), "cart1")
 
   override def receive: Receive = LoggingReceive{
     case Customer.Init => {
-      cart1 ! Cart.Init
       cart1 ! Cart.AddItem
       cart1 ! Cart.StartCheckout
       context become waitingForCheckout()
